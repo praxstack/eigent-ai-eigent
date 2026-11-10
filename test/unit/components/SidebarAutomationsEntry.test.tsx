@@ -27,7 +27,10 @@ const mocks = vi.hoisted(() => {
   };
   const space = {
     activeSpaceId: 'space-a',
-    spaces: {},
+    spaces: { 'space-a': { id: 'space-a', name: 'Research' } } as Record<
+      string,
+      { id: string; name: string }
+    >,
     projectsBySpaceId: { 'space-a': [meta] },
     getProjectMeta: () => meta,
     getProjectsForSpace: vi.fn((): (typeof meta)[] => []),
@@ -57,6 +60,7 @@ const mocks = vi.hoisted(() => {
     runtime,
     page,
     invoke: vi.fn(),
+    executeAppCommand: vi.fn(),
     archive: vi.fn(),
     stop: vi.fn(),
     SessionStopError: class SessionStopError extends Error {},
@@ -67,6 +71,9 @@ const mocks = vi.hoisted(() => {
     success: vi.fn(),
   };
 });
+vi.mock('@/components/Home/SpaceHeaderMenu', () => ({
+  SpaceHeaderMenu: () => <button type="button" aria-label="Space menu" />,
+}));
 vi.mock('@/api/http', () => ({
   fetchDelete: vi.fn(),
   fetchPut: vi.fn(),
@@ -93,8 +100,10 @@ vi.mock('@/store/spaceStore', () => ({
   getVisibleProjectMetasForSpace: () => [mocks.space.getProjectMeta()],
 }));
 vi.mock('@/store/projectRuntimeStore', () => ({
-  useProjectRuntimeStore: (selector?: any) =>
-    selector ? selector(mocks.runtime) : mocks.runtime,
+  useProjectRuntimeStore: Object.assign(
+    (selector?: any) => (selector ? selector(mocks.runtime) : mocks.runtime),
+    { getState: () => mocks.runtime }
+  ),
 }));
 vi.mock('@/store/pageTabStore', () => ({
   usePageTabStore: (selector: any) => selector(mocks.page),
@@ -144,7 +153,7 @@ vi.mock('@/components/GlobalSearch', () => ({
   GlobalSearchDialog: () => null,
 }));
 vi.mock('@/components/Layout/AppCommandProvider', () => ({
-  useAppCommand: () => vi.fn(),
+  useAppCommand: () => mocks.executeAppCommand,
 }));
 vi.mock('@/components/ui/shortcut-tooltip', () => ({
   ShortcutTooltipContent: () => null,
@@ -189,7 +198,7 @@ vi.mock('sonner', () => ({
 function renderSidebar() {
   render(
     <MemoryRouter>
-      <SpaceSidebar chatStore={null} />
+      <SpaceSidebar />
     </MemoryRouter>
   );
 }
@@ -235,5 +244,42 @@ describe('Sidebar Automations entry', () => {
 
     expect(mocks.error).not.toHaveBeenCalled();
     expect(mocks.page.setActiveWorkspaceTab).toHaveBeenCalledWith('triggers');
+  });
+});
+
+describe('Space sidebar first rows', () => {
+  it('starts with the Space menu and settings, then New session, then Files', () => {
+    renderSidebar();
+
+    const names = screen
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'));
+    expect(names.slice(0, 4)).toEqual([
+      'Space menu',
+      'Space settings',
+      'New session',
+      'Files',
+    ]);
+    for (const removed of ['Workspace', 'Configuration']) {
+      expect(
+        screen.queryByRole('button', { name: removed })
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it('opens Space settings from the row button', () => {
+    renderSidebar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Space settings' }));
+    expect(mocks.executeAppCommand).toHaveBeenCalledWith(
+      'navigate-configuration'
+    );
+  });
+
+  it('starts a New session from its row', () => {
+    renderSidebar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }));
+    expect(mocks.executeAppCommand).toHaveBeenCalledWith('new-project');
   });
 });
